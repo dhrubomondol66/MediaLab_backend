@@ -1,25 +1,36 @@
-# Feed App — Django REST Backend
+# Media Lab — Social Feed (Backend)
 
 A Django REST Framework backend for a social feed app (Login / Register / Feed),
 built to pair with a React or Next.js frontend. Covers JWT auth, public/private
 posts, comments, nested replies, and a like system across all three, with data
 modeling chosen to hold up as the tables grow into the millions of rows.
 
+**Live API:** [medialab-backend-zbrj.onrender.com](https://medialab-backend-zbrj.onrender.com)
+**API Documentation (Swagger):** [medialab-backend-zbrj.onrender.com/swagger/](https://medialab-backend-zbrj.onrender.com/swagger/)
+
+> Hosted on Render's free tier — the first request after a period of
+> inactivity may take 30–60 seconds while the instance spins back up.
+
+---
+
 ## Stack
 
 - **Django 5 + Django REST Framework** — API layer
 - **djangorestframework-simplejwt** — JWT authentication (access + refresh tokens)
-- **SQLite** for local dev, **PostgreSQL** for production (toggle via `.env`)
+- **PostgreSQL** in production, **SQLite** for local dev (toggle via `.env`)
 - **Pillow** for image handling
 - **django-cors-headers** — CORS for the separate frontend origin
+- **drf-yasg** — auto-generated Swagger/OpenAPI documentation
+- **Gunicorn + WhiteNoise** — production server and static file serving
+- **Render** — deployment (web service + managed Postgres)
 
 ## Project layout
 
 ```
-backend/
+medialab/
 ├── medialab/          # settings, root urls, wsgi/asgi, exception handler
-├── users/         # custom User model (email-based), register/login/me
-├── feed/             # Post, Comment, Reply, Like models + API
+├── users/             # custom User model (email-based), register/login/me
+├── feed/              # Post, Comment, Reply, Like models + API
 ├── manage.py
 ├── requirements.txt
 └── .env.example
@@ -28,8 +39,9 @@ backend/
 ## Setup
 
 ```bash
-cd backend
-python -m venv venv && source venv/bin/activate
+git clone <this-repo-url>
+cd medialab
+python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env        # edit SECRET_KEY etc.
 python manage.py migrate
@@ -38,7 +50,17 @@ python manage.py runserver
 ```
 
 By default `.env` uses SQLite so there's nothing else to install for local dev.
-To use Postgres, set `DB_ENGINE=postgres` and fill in the `DB_*` values.
+To use Postgres locally, set `DATABASE_URL` to a Postgres connection string.
+
+### Environment variables
+
+| Variable | Purpose |
+|---|---|
+| `SECRET_KEY` | Django secret key |
+| `DEBUG` | `True` locally, `False` in production |
+| `ALLOWED_HOSTS` | Comma-separated list of allowed hostnames |
+| `DATABASE_URL` | Postgres connection string (falls back to local SQLite/Postgres default) |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated list of allowed frontend origins |
 
 ## Authentication
 
@@ -53,7 +75,7 @@ JWT-based, via SimpleJWT. Email is the login identifier (no separate
 | `/auth/refresh/` | POST | `refresh` | Returns a new `access` token |
 | `/auth/me/` | GET | — | Requires `Authorization: Bearer <access>` |
 
-Access tokens are short-lived (15 min default); refresh tokens rotate and get
+Access tokens are short-lived (1 hour by default); refresh tokens rotate and get
 blacklisted after use, which limits the damage if one leaks. The frontend
 should store the access token in memory and the refresh token in an
 httpOnly cookie if you control both frontend and backend hosting, or in
@@ -66,22 +88,25 @@ All endpoints below require `Authorization: Bearer <access_token>`.
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/api/posts/` | GET | Feed — public posts + your own private posts, newest first |
-| `/api/posts/` | POST | Create a post (`text`, optional `image`, `visibility: public\|private`) |
-| `/api/posts/{id}/` | GET / PATCH / DELETE | Author-only for write |
-| `/api/posts/{id}/like/` | POST | Toggle like/unlike |
-| `/api/posts/{id}/likes/` | GET | Who liked this post (paginated) |
-| `/api/posts/{id}/comments/` | GET / POST | List / add comments |
-| `/api/comments/{id}/` | DELETE | Author-only |
-| `/api/comments/{id}/like/` | POST | Toggle like/unlike |
-| `/api/comments/{id}/likes/` | GET | Who liked this comment |
-| `/api/comments/{id}/replies/` | GET / POST | List / add replies |
-| `/api/replies/{id}/` | DELETE | Author-only |
-| `/api/replies/{id}/like/` | POST | Toggle like/unlike |
-| `/api/replies/{id}/likes/` | GET | Who liked this reply |
+| `/posts/` | GET | Feed — public posts + your own private posts, newest first |
+| `/posts/` | POST | Create a post (`text`, optional `image`, `visibility: public\|private`) |
+| `/posts/{id}/` | GET / PATCH / DELETE | Author-only for write |
+| `/posts/{id}/like/` | POST | Toggle like/unlike |
+| `/posts/{id}/likes/` | GET | Who liked this post (paginated) |
+| `/posts/{id}/comments/` | GET / POST | List / add comments |
+| `/comments/{id}/` | DELETE | Author-only |
+| `/comments/{id}/like/` | POST | Toggle like/unlike |
+| `/comments/{id}/likes/` | GET | Who liked this comment |
+| `/comments/{id}/replies/` | GET / POST | List / add replies |
+| `/replies/{id}/` | DELETE | Author-only |
+| `/replies/{id}/like/` | POST | Toggle like/unlike |
+| `/replies/{id}/likes/` | GET | Who liked this reply |
 
 Pagination is **cursor-based** (`next` / `previous` URLs in the response),
 not page-number based — see "Scaling to millions of posts" below for why.
+
+Full interactive documentation is available at
+[`/swagger/`](https://medialab-backend-zbrj.onrender.com/swagger/).
 
 ## Data model & key decisions
 
@@ -164,12 +189,10 @@ of posts and reads" requirement, beyond what's mentioned above:
   with this" (anyone, for public content) from "can edit/delete this" (author
   only) — so a like or comment doesn't accidentally require post ownership,
   while an edit or delete always does.
-- `DEBUG` and `ALLOWED_HOSTS` are environment-driven; the settings file has
-  commented-out `SECURE_*` flags to enable once deployed behind HTTPS.
+- `DEBUG` and `ALLOWED_HOSTS` are environment-driven and set to production-safe
+  values on the deployed instance.
 - CORS is restricted to an explicit allow-list (`CORS_ALLOWED_ORIGINS`), not
   wildcarded.
-- DRF throttling is enabled by default (300 req/min authenticated, 30/min
-  anonymous) as a basic guard against abusive clients.
 
 ## What's intentionally out of scope
 
@@ -184,11 +207,22 @@ posts + the viewer's own private posts.
 fast even once the tables are large — a raw ID field doesn't try to render a
 dropdown of a million rows).
 
-## Suggested next steps for the frontend
+## Deployment
+
+Deployed on [Render](https://render.com) as a web service backed by a managed
+Postgres instance.
+
+- **Build command:** `pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate`
+- **Start command:** `gunicorn medialab.wsgi:application`
+- Static files are served via WhiteNoise; media uploads are stored on the
+  instance's local filesystem for this assessment (a production deployment at
+  scale would move `MEDIA` storage to S3 or an equivalent object store).
+
+## Frontend integration notes
 
 - On login, store `access` in memory (e.g. a React context/hook) and attach
   it as `Authorization: Bearer <token>` on every request.
-- On a 401, use the `refresh` token against `/api/auth/refresh/` to get a new
+- On a 401, use the `refresh` token against `/auth/refresh/` to get a new
   `access` token before retrying the original request once.
-- The feed screen should call `/api/posts/` with cursor pagination
+- The feed screen should call `/posts/` with cursor pagination
   (`?cursor=...` from the `next` field) as the user scrolls.
