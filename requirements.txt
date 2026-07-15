@@ -10,3 +10,4 @@ django-filter==24.2
 drf-yasg==1.21.7
 gunicorn==22.0.0
 setuptools==70.0.0
+whitenoise==6.7.0
