@@ -70,6 +70,7 @@ ROOT_URLCONF = "medialab.urls"
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://medialab-frontend.vercel.app"
 ]
 
 TEMPLATES = [
@@ -77,6 +78,7 @@ TEMPLATES = [
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         "DIRS": [],
         "APP_DIRS": True,
+        
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.request",
