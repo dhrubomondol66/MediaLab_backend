@@ -9,3 +9,4 @@ psycopg2-binary==2.9.9
 django-filter==24.2
 drf-yasg==1.21.7
 gunicorn==22.0.0
+setuptools==70.0.0
